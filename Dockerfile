@@ -2,8 +2,11 @@
 # The base image is pinned by tag and digest; Dependabot moves both.
 FROM python:3.13.18-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
 
-# the two CSV import scripts are bash and upload with curl
-RUN apk add --no-cache bash curl
+# the two CSV import scripts are bash and upload with curl; pip goes: the
+# scripts are standard library only, and its vendored packages (msgpack, ...)
+# are what the image scan flags
+RUN apk add --no-cache bash curl \
+    && python -m pip uninstall --yes --root-user-action=ignore pip
 
 WORKDIR /app
 ENV PATH="/app:${PATH}"
