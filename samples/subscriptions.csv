@@ -1,0 +1,11 @@
+name,group,counterparty,match_amount,description_contains,amount_min,amount_max,repeat_freq,skip,date,active,rule,exclude,notes,currency
+Rent,Home,Jane Landlord,900-1100,,1000,1000,monthly,0,2026-01-01,true,external,,"linked by a rule of your own (rule = external: no rule, no linking here)",
+Electricity,Home,City Power,,,40,110,monthly,0,2026-01-08,true,yes,,amount varies,
+Internet,Home,Telekom,,festnetz,34,52,monthly,0,2026-01-09,true,yes,,same counterparty as Mobile: the description must contain 'festnetz',
+Mobile,Home,Telekom|Telekom Prepaid,,!festnetz,15,15,monthly,0,2026-01-22,true,yes,,'!' = must not contain; two counterparty accounts,
+Old electricity supplier,Home,Other Power,,,61,86,monthly,0,2024-05-02,false,no,,"ended 2024-05: inactive, history stays linked (rule = no)",
+Audible,Streaming,Audible,,,9.95,9.95,monthly,0,2026-01-23,true,yes,,no match_amount: price changes still link,
+Amazon Prime,Streaming,Amazon,89.9-89.9,,89.9,89.9,yearly,0,2026-09-10,true,yes,,match_amount picks the one yearly booking among all Amazon purchases,
+Yazio,Streaming,Google Play Store,19.99-19.99,,19.99,19.99,yearly,0,2026-03-29,true,yes,12345,exclude: a booking (group id) with the same amount that is something else,
+Hetzner,Server,Hetzner Online,,,3.81,11.43,quarterly,0,2026-03-05,true,yes,,,
+Gym,Other,Fitness Club,45-59,,45,59,monthly,0,2026-01-15,true,yes,,paid from a USD account,USD

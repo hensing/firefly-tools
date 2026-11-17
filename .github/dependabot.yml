@@ -1,0 +1,20 @@
+version: 2
+updates:
+  # Actions are pinned to commit SHAs (version in a trailing comment);
+  # Dependabot updates both.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # Base image of the Dockerfile (tag + digest)
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "sunday"

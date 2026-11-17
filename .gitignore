@@ -1,0 +1,20 @@
+# secrets
+.env
+*.pem
+# Enable Banking importer configs hold session/auth ids
+import_config_dkb.json
+import_config_paypal.json
+import_config_wise.json
+import_config_all_accounts.json
+
+# your own tables and bank data (start from samples/): never in the repo
+export/
+# local-only material (old migration scripts, private notes)
+legacy/
+# bank downloads dropped into the repo root
+/*.csv
+/*.CSV
+/*.xlsx
+
+__pycache__/
+.DS_Store

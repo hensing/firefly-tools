@@ -1,0 +1,12 @@
+Kreditkartentransaktionen
+Kreditkarte;Kundennummer;Kartennummer;Karteninhaber
+Miles & More Gold Credit Card (Kreditkarte);123 4567890;1234********5678;Dr. Erika Mustermann
+
+Abrechnungsdatum: 3.2.2026
+Belegdatum;Eingangstag;Verwendungszweck;Fremdwährung;Betrag;Kurs;Betrag;Währung
+2.1.2026;2.1.2026;MONATLICHER KARTENPREIS;EUR;-9,2;1,00000;-9,2;EUR
+14.1.2026;15.1.2026;EDEKA MUSTERMANN, 53111 BONN, DEU;EUR;-27,48;1,00000;-27,48;EUR
+18.1.2026;20.1.2026;STARBUCKS STORE 11630, HANOVER, USA;USD;-5,5;1,10890;-4,96;EUR
+25.1.2026;26.1.2026;LUFTHANSA 2201234567890, 50679 KOELN, DEU;EUR;-189,3;1,00000;-189,3;EUR
+28.1.2026;28.1.2026;LASTSCHRIFT;EUR;230,94;1,00000;230,94;EUR
+Saldo:;;;;;;0,00;EUR

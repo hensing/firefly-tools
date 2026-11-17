@@ -1,0 +1,15 @@
+account,type,bookings_2y,category,top_category,patterns,dropped,note,condition,tag,regex
+Amazon,expense,,Shopping,,starts:amazon | starts:www amazon | contains:amzn,,"several spellings, one account",,,
+Amazon,revenue,,Shopping,,contains:amazon | contains:amzn,,refunds: a revenue account with the same name and the purchase's category,,,
+Starbucks,expense,,Eating out,,starts:starbucks,,the bank sends 'Starbucks Store 11630 HANOVER',,,
+Edeka,expense,,Groceries,,starts:edeka | starts:edk*edeka,,,,,
+Deutsche Bahn,expense,,Transport,,is:Deutsche Bahn | contains:deutschebahn | starts:db vertrieb | starts:db fernverkehr,,card: 'WWW.DEUTSCHEBAHN.COM'; PayPal: 'DB Vertrieb GmbH',,,
+Uber,expense,,"=(description ~ "" "" ~ destination_account_name) matches ""/eats/i"" ? ""Eating out"" : ""Transport""",,starts:ubr | starts:uber,,"expression: Uber Eats = Eating out, rides = Transport",,,
+Harbor Ferry,expense,,"=amount > -35 ? ""Drinks"" : ""Transport""",,starts:harbor ferry | contains:harborferry,,"expression on the amount (negative for withdrawals): below 35 = snack bar on board, else the ticket",,,
+REI,expense,,Shopping,,is:REI | starts:rei,,starts:rei also hits 'Reichelt Elektronik'; the regex picks REI (store number or plain REI),,,^rei(\s*#?\d|$)
+City Parking,expense,,Transport,,starts:city of,,only small amounts are parking fees: extra trigger that must also hold (one strict rule per pattern),amount_less:20,,
+Island Hardware,expense,,Household & DIY,,starts:island hardware,,adds a tag as well,,Holiday home,
+Payment Fees,expense,,Fees & Taxes,,description_starts:ACCRUAL_CHECKOUT,,pattern on the description instead of the counterparty name,,,
+Employer Inc,revenue,,Salary,,is:EMPLOYER INC,,income: matches the source of a deposit,,,
+Broker,revenue,,Investment income,,contains:wertpapierertrag | description_starts:Depot 0000000000 Wertpapierertrag,,the bank's own name is the counterparty; the depot text is only in the description,,,
+Jane Doe,expense,,,,"is:Jane Doe | starts:doe, jane",,no category: private persons are decided per booking,,,

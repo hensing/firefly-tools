@@ -1,0 +1,18 @@
+#!/bin/sh
+# Leak guard: blocks commits with secrets or account numbers.
+# Activate once per clone: git config core.hooksPath .githooks
+#
+# 1. Own tables, bank exports and .env never go into the repo, not even forced.
+# 2. gitleaks: its default rules (tokens, keys, passwords) plus the IBAN rule
+#    in .gitleaks.toml.
+blocked=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^(export|legacy)/|(^|/)\.env$')
+if [ -n "$blocked" ]; then
+    echo "pre-commit: these files must stay local (see .gitignore):" >&2
+    echo "$blocked" | sed 's/^/   /' >&2
+    exit 1
+fi
+if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "pre-commit: gitleaks not installed (brew install gitleaks) — commit blocked" >&2
+    exit 1
+fi
+exec gitleaks git --pre-commit --staged --redact --no-banner

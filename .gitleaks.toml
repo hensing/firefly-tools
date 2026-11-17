@@ -1,0 +1,31 @@
+title = "firefly tools"
+
+[extend]
+useDefault = true
+
+# Own account numbers are the likeliest leak here: they sit in bank texts,
+# rule notes and test data. IBANs that many merchants share (bank clearing,
+# PayPal, card acquirers) are part of the code and allow-listed below.
+[[rules]]
+id = "iban"
+description = "IBAN"
+regex = '''\b(?:DE\d{2}(?: ?\d{4}){4} ?\d{2}|[A-Z]{2}\d{2}[A-Z0-9]{11,30})\b'''
+keywords = []
+
+  [[rules.allowlists]]
+  description = "shared IBANs listed in ff_postprocess.py (SHARED_IBANS) and the README"
+  regexTarget = "match"
+  regexes = [
+    '''DE96 ?1203 ?0000 ?9005 ?2909 ?04''',
+    '''DE88500700100175526303''',
+    '''LU89751000135104200E''',
+    '''DE51300500000001474915''',
+    '''DE67500500000959567025''',
+    '''DE86300500000001052141''',
+    '''DE89500500000959567017''',
+  ]
+
+  [[rules.allowlists]]
+  description = "American Express booking reference (AT + 21 digits; an Austrian IBAN has 18)"
+  regexTarget = "match"
+  regexes = ['''^AT\d{21}$''']
