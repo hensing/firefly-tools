@@ -1,6 +1,6 @@
 # Firefly III helper scripts (standard library only) on a plain Python image.
 # The base image is pinned by tag and digest; Dependabot moves both.
-FROM python:3.13.18-alpine@sha256:9ef1a599f863231c3d91e941389bfdc4a2d6070557243d54df1a4e57015b960e
+FROM python:3.15.2-alpine@sha256:0f9552bb28711333da16915ec146f5e6bb44a7fdac9ced15dc17c2e0206346dd
 
 # the two CSV import scripts are bash and upload with curl
 RUN apk add --no-cache bash curl
