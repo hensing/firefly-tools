@@ -267,7 +267,7 @@ nightly run on the server:
 docker run --rm --network firefly_firefly_iii --env-file /etc/firefly-postprocess.env \
   --user 65534:65534 --read-only --security-opt no-new-privileges=true --memory 128m \
   -v "$jobs":/jobs:ro \
-  ghcr.io/hensing/firefly-tools:latest@sha256:… ff_postprocess.py --execute --jobs /jobs
+  ghcr.io/hensing/firefly-tools:1.0.0@sha256:… ff_postprocess.py --execute --jobs /jobs
 ```
 
 `$jobs` is a copy of the importer's `storage/import-jobs`. The other scripts work on your
@@ -400,9 +400,15 @@ Then check the DKB card payments since the break, comparing the account against
   (`.gitleaks.toml`; the shared IBANs above are allow-listed).
 - **Build**: `.github/workflows/docker.yml` runs on GitHub Actions on every push to `main`
   that touches the scripts or the Dockerfile: syntax check, a conversion test on the
-  Miles & More sample, multi-arch build, push to `ghcr.io/hensing/firefly-tools` (`latest`
-  and `sha-<commit>`), Trivy scan. No secrets to set up: it uses the workflow's own
-  `GITHUB_TOKEN`. The build is reproducible, so an unchanged rebuild keeps its digest.
+  Miles & More sample, multi-arch build, push to `ghcr.io/hensing/firefly-tools`, Trivy
+  scan. No secrets to set up: it uses the workflow's own `GITHUB_TOKEN`. The build is
+  reproducible, so an unchanged rebuild keeps its digest.
+- **Versions** (semver, git tags `vX.Y.Z`): a major or minor release is a tag you push
+  together with its commit, `git tag v1.1.0 && git push --atomic origin main v1.1.0`.
+  Every other build on `main` (a fix, a Dependabot update) is the next patch release: the
+  workflow pushes the image as `X.Y.(Z+1)` and tags the commit `vX.Y.(Z+1)`; pull before
+  your next commit. Image tags: `X.Y.Z`, `X.Y`, `X`, `latest` (the last three follow the
+  highest version) and `sha-<commit>`. Pin `X.Y.Z@sha256:…` and let Renovate or Dependabot
+  move it.
 - **Updates**: Dependabot raises weekly PRs for the base image and the pinned actions; the
-  build runs on them (without pushing).
-  the pinned actions.
+  build runs on them (without pushing). Merged, they become a patch release.

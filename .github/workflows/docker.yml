@@ -3,10 +3,18 @@ name: Build & Push
 # Builds the image on every push to main that touches the scripts or the
 # Dockerfile and pushes it to the GitHub Container Registry. Pull requests
 # (Dependabot's included) are built and checked, never pushed.
+#
+# Versions: a tag vX.Y.Z pushed by hand is a release of that version (major and
+# minor steps). Any other build on main is the next patch release: it is pushed
+# as X.Y.(Z+1) and the workflow tags the commit vX.Y.(Z+1). Image tags:
+# X.Y.Z, X.Y, X and latest (the moving ones only for the highest version), plus
+# sha-<commit>.
 on:
   push:
     branches: [main]
-    # Docs-only commits don't rebuild: nothing in the image changed.
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+    # Docs-only commits don't rebuild: nothing in the image changed. (Tag
+    # pushes ignore path filters.)
     paths-ignore:
       - "**.md"
       - "LICENSE"
@@ -21,6 +29,11 @@ on:
 permissions:
   contents: read
 
+# one build at a time: two runs must not pick the same next patch version
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   IMAGE: ghcr.io/hensing/firefly-tools
   TRIVY_VERSION: v0.76.2
@@ -29,11 +42,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write   # the patch release tag
       packages: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0   # all tags, for the next version
 
       - name: Check the scripts
         run: |
@@ -43,11 +60,38 @@ jobs:
           sh -n entrypoint.sh
           ./import_mm.sh -n samples/Kreditkartentransaktionen_1234xxxxxxxx5678_20260201_120000.csv
 
-      - name: Tags
-        id: tags
+      # version: a pushed tag; else a version tag already on this commit (tag
+      # and commit pushed together); else the highest version's next patch
+      - name: Version and tags
+        id: version
         run: |
           SHORT=$(git rev-parse --short=7 HEAD)
-          echo "tags=${{ env.IMAGE }}:latest,${{ env.IMAGE }}:sha-${SHORT}" >> "$GITHUB_OUTPUT"
+          if [ "${GITHUB_EVENT_NAME}" = pull_request ]; then
+            echo "tags=${IMAGE}:pr-${SHORT}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          SEMVER='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          HIGHEST=$(git tag --list 'v*' | grep -E "${SEMVER}" | sort -V | tail -n1 || true)
+          NEW=false
+          if [ "${GITHUB_REF_TYPE}" = tag ]; then
+            VERSION=${GITHUB_REF_NAME#v}
+          elif HERE=$(git tag --points-at HEAD | grep -E "${SEMVER}" | sort -V | tail -n1) && [ -n "${HERE}" ]; then
+            VERSION=${HERE#v}
+          elif [ -n "${HIGHEST}" ]; then
+            IFS=. read -r MAJOR MINOR PATCH <<< "${HIGHEST#v}"
+            VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+            HIGHEST="v${VERSION}"
+            NEW=true
+          else
+            echo "no version tag yet: push v1.0.0 first" >&2
+            exit 1
+          fi
+          TAGS="${IMAGE}:${VERSION},${IMAGE}:sha-${SHORT}"
+          if [ "v${VERSION}" = "${HIGHEST}" ]; then
+            TAGS="${TAGS},${IMAGE}:${VERSION%.*},${IMAGE}:${VERSION%%.*},${IMAGE}:latest"
+          fi
+          echo "Version ${VERSION} (new tag: ${NEW}) -> ${TAGS}"
+          { echo "version=${VERSION}"; echo "new=${NEW}"; echo "tags=${TAGS}"; } >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4
@@ -90,13 +134,22 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64
           outputs: type=image,push=${{ github.event_name != 'pull_request' }},rewrite-timestamp=true
-          tags: ${{ steps.tags.outputs.tags }}
+          tags: ${{ steps.version.outputs.tags }}
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.description=Firefly III tools: rules and subscriptions from tables, post-processing after the import
             org.opencontainers.image.licenses=GPL-3.0-only
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
           sbom: false
           provenance: false
+
+      # after the push: a failed build leaves no tag behind. Pushed with
+      # GITHUB_TOKEN, so it starts no second run.
+      - name: Tag the patch release
+        if: steps.version.outputs.new == 'true'
+        run: |
+          git tag "v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
 
   scan:
     runs-on: ubuntu-latest
@@ -119,4 +172,4 @@ jobs:
             --severity HIGH,CRITICAL \
             --ignore-unfixed \
             --format table \
-            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ needs.build.outputs.version }}
