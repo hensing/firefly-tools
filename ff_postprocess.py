@@ -79,6 +79,7 @@ SHARED_IBANS = {
 }
 COUNTERPARTY_GROUP = "Managed: Counterparties"   # rules that map bank names to accounts
 EMPTY_DAYS = 14   # empty accounts created within this many days are deleted (importer leftovers)
+FUNDING_DAYS = 5   # a PayPal payment and the card charge behind it
 NO_PLACE = set()   # counterparties whose account notes say "place: no" (filled in main)
 # Forecast: card statements close on day C of the month and are debited from Giro
 # on day D at the earliest (2025-12..2026-10: AMEX and M&M close ~2nd, debit 6th-10th)
@@ -159,6 +160,9 @@ def get_all(path):
 # bank sent. The importer's job files (copied out by the wrapper, --jobs) still have
 # it: external ID + amount -> the counterparty name as sent.
 BANK_NAMES = {}
+# Same for the currency: Firefly books a withdrawal in the currency of its asset account
+# and keeps only the number (PayPal "125.50 USD" -> 125.50 EUR).
+BANK_CURRENCIES = {}
 UNKNOWN_NAMES = {"(unknown destination)", "(unknown source)"}
 ACCOUNT_PATTERNS = []   # (side, kind, value, account) from the counterparty rules
 
@@ -175,6 +179,8 @@ def load_jobs(folder):
         for group in job.get("converted_transactions") or []:
             for t in group.get("transactions") or []:
                 name = t.get("destination_name") if t.get("type") == "withdrawal" else t.get("source_name")
+                if t.get("external_id") and t.get("currency_code"):
+                    BANK_CURRENCIES[(t["external_id"], f"{abs(float(t['amount'])):.2f}")] = t["currency_code"]
                 if t.get("external_id") and name and name not in UNKNOWN_NAMES:
                     BANK_NAMES[(t["external_id"], f"{abs(float(t['amount'])):.2f}")] = name
 
@@ -277,6 +283,25 @@ def original_text(s):
     """Bank text: the description, or the copy kept in the notes."""
     m = re.match(r"Original: (.*)", s["notes"] or "")
     return m[1] if m else s["description"] or ""
+
+
+def funding(s):
+    """The transfers into this account (card charge behind a PayPal payment) whose bank text
+    names exactly this booking's foreign amount and currency, within FUNDING_DAYS."""
+    day = date.fromisoformat(s["date"][:10])
+    out = []
+    for g in get_all(f"accounts/{s['source_id']}/transactions?start={day - timedelta(days=FUNDING_DAYS)}"
+                     f"&end={day + timedelta(days=FUNDING_DAYS)}"):
+        for t in g["attributes"]["transactions"]:
+            if (t["type"] != "transfer" or t["destination_id"] != s["source_id"]
+                    or t["currency_code"] != s["currency_code"]):
+                continue
+            m = next(filter(None, (rx.search((t["description"] or "") + "\n" + (t["notes"] or ""))
+                                   for rx in FOREIGN)), None)
+            if m and CURRENCY_NAMES.get(m[2], m[2]) == s["foreign_currency_code"] \
+                    and abs(float(decimal(m[1])) - float(s["foreign_amount"])) < 0.005:
+                out.append(t)
+    return out
 
 
 def nice_description(s, overrides):
@@ -457,9 +482,21 @@ def plan_split(s, overrides):
     if counterparty(s) in CLEARING and not raw:
         problems.append("booked on the DKB card clearing placeholder: set the merchant "
                         "from the bank export (Zahlungsempfaenger)")
-    if own_account(s) == "Paypal" and s["currency_code"] != "EUR":
-        problems.append(f"PayPal booking in {s['currency_code']} without EUR amount "
-                        "(take it from the AMEX -> Paypal transfer)")
+    sent = BANK_CURRENCIES.get((s["external_id"], f"{abs(float(s['amount'])):.2f}"))
+    if s["type"] != "transfer" and not s["foreign_currency_code"] and sent and sent != s["currency_code"]:
+        # the number is the foreign amount; kept as such until the real amount is known
+        # (amount == foreign amount), the job files don't last that long
+        s = {**s, "foreign_amount": s["amount"], "foreign_currency_code": sent}
+        changes.update(foreign_amount=s["amount"], foreign_currency_code=sent)
+    if (s["type"] != "transfer" and s["foreign_currency_code"]
+            and abs(float(s["amount"]) - float(s["foreign_amount"])) < 0.005):
+        found = funding(s) if s["type"] == "withdrawal" else []
+        if len(found) == 1:
+            changes["amount"] = found[0]["amount"]
+        else:
+            problems.append(f"{float(s['amount']):.2f} {s['foreign_currency_code']} booked as "
+                            f"{s['currency_code']}: {len(found)} card charges with that foreign amount, set the "
+                            f"{s['currency_code']} amount by hand or wait for the card import")
     return changes, problems
 
 

@@ -172,6 +172,7 @@ again, so manual edits in Firefly are safe. A booking with a problem keeps it, g
 |---|---|
 | Description = merchant + place | `VISA Debitkartenumsatz …` → `Starbucks Hanover`; the bank text goes to the notes as `Original: …` |
 | Foreign amount and currency | from the DKB / Wise / AMEX text |
+| Foreign PayPal payments (`--jobs`) | Firefly books 125.50 USD as 125.50 EUR (currency of the asset account); the number becomes the foreign amount, the EUR amount comes from the card charge with the same foreign amount. Until that is imported: `_fixme` |
 | Purchase date | `date` = day of the card purchase, `book_date` = bank booking date |
 | Bank counterparty name (`--jobs`) | the name the bank sent, read from the importer's job files, into the notes; mail if it doesn't fit the account Firefly picked |
 | Card refunds | get their merchant, the purchase's category and the tag `refund` |
