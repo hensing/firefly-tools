@@ -175,6 +175,7 @@ again, so manual edits in Firefly are safe. A booking with a problem keeps it, g
 | Purchase date | `date` = day of the card purchase, `book_date` = bank booking date |
 | Bank counterparty name (`--jobs`) | the name the bank sent, read from the importer's job files, into the notes; mail if it doesn't fit the account Firefly picked |
 | Card refunds | get their merchant, the purchase's category and the tag `refund` |
+| Wise | both legs of a currency conversion (same reference) become one transfer; a "Topped up account" deposit is dropped when an own account already shows the transfer (same amount, ±4 days, exactly one match). Waits 4 days for the other bank, then mails. Needs the Wise account's IBAN on its asset account, so the importer turns the paying bank's booking into a transfer |
 | Shared IBANs | cleared from any merchant account that picked one up (see design decision 4) |
 | Leftovers | empty accounts the importer created and a rule emptied are deleted |
 | Warnings | uncategorised bookings, an import that stopped arriving |

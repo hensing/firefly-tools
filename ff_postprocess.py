@@ -13,6 +13,8 @@ rule cannot set and never touches the classification:
   - with --jobs (the importer's job files): the counterparty name the bank sent
     into the notes, a mail when it doesn't fit the account Firefly picked, and the
     merchant for card refunds that landed on the DKB clearing placeholder
+  - Wise: the two legs of a currency conversion become one transfer, and a top-up that
+    an own account already shows as a transfer is dropped
   - shared IBANs (DKB card clearing, PayPal, card acquirers) cleared from any
     merchant account that picked one up
   - empty accounts the importer left behind (raw bank name, booking moved by a
@@ -503,6 +505,118 @@ def process(groups, overrides, execute, drop_tag):
     return done, failed, uncategorised
 
 
+# ---------------------------------------------------------------- Wise
+
+# Wise sends no counterparty. A conversion arrives as a withdrawal and a deposit with the
+# same reference; a top-up as a deposit, besides the transfer the paying bank shows
+# (Wise account = asset account with its IBAN, so the importer makes it a transfer).
+CONVERSION = re.compile(r"^((?:CONVERSION_ORDER|BALANCE)-\d+) Converted ([\d.,]+) ([A-Z]{3}) to ([\d.,]+) ([A-Z]{3})")
+TOPUP = re.compile(r"^(TRANSFER-\d+) Topped up account$")
+PAIR_DAYS = 4   # the two sides of a top-up: instant at Wise, next banking day at the bank
+
+
+def add_note(s, text):
+    return f"{s['notes'].rstrip()}\n\n{text}" if s["notes"] else text
+
+
+def put_split(g, s, **changes):
+    api("PUT", f"transactions/{g['id']}", {
+        "apply_rules": False, "fire_webhooks": False,
+        "transactions": [{"transaction_journal_id": s["transaction_journal_id"], **changes}]})
+
+
+def wise_pairs(groups, execute):
+    """-> (groups left to process, problem lines as in process()). Only bookings whose
+    Wise side is still unknown; a group with several splits is never touched."""
+    single = [(g, g["attributes"]["transactions"][0]) for g in groups
+              if len(g["attributes"]["transactions"]) == 1]
+    open_ = [(g, s) for g, s in single if s["type"] != "transfer" and counterparty(s) in UNKNOWN_NAMES]
+    gone, failed = set(), []
+
+    def problem(g, s, text):
+        failed.append((line(g, s) + " -- " + text, FIXME not in (s["tags"] or [])))
+        gone.add(g["id"])   # keeps its tag for the next run
+        if execute and FIXME not in (s["tags"] or []):
+            put_split(g, s, tags=(s["tags"] or []) + [FIXME])
+
+    legs = {}
+    for g, s in open_:
+        m = CONVERSION.match(s["description"] or "")
+        if m:
+            legs.setdefault(m[1], []).append((g, s, m))
+    for ref, found in legs.items():
+        outs = [x for x in found if x[1]["type"] == "withdrawal"]
+        ins = [x for x in found if x[1]["type"] == "deposit"]
+        if len(outs) != 1 or len(ins) != 1:
+            for g, s, _ in found:
+                problem(g, s, f"conversion {ref}: {len(outs)} withdrawal(s) and {len(ins)} deposit(s), "
+                              "expected one each")
+            continue
+        (g, s, m), (g2, s2, _) = outs[0], ins[0]
+        # the bank text names both currencies and the credited amount
+        if (m[3], m[5]) != (s["currency_code"], s2["currency_code"]) \
+                or abs(float(decimal(m[4])) - float(s2["amount"])) > 0.005:
+            problem(g, s, f"conversion {ref}: text and amounts differ")
+            problem(g2, s2, f"conversion {ref}: text and amounts differ")
+            continue
+        print(f"  #{g['id']} conversion {ref}: transfer {s['source_name']} {float(s['amount']):.2f} "
+              f"{s['currency_code']} -> {s2['destination_name']} {float(s2['amount']):.2f} "
+              f"{s2['currency_code']}, drop #{g2['id']}")
+        if execute:
+            put_split(g, s, type="transfer", source_id=s["source_id"], destination_id=s2["destination_id"],
+                      foreign_amount=s2["amount"], foreign_currency_code=s2["currency_code"],
+                      description=f"Converted {m[2]} {m[3]} to {m[4]} {m[5]}",
+                      notes=add_note(s, "Original: " + s["description"]),
+                      tags=[t for t in s["tags"] or [] if t not in (TAG, FIXME)])
+            # first make sure the transfer really is one: Firefly may ignore a field
+            n = api("GET", f"transactions/{g['id']}")["data"]["attributes"]["transactions"][0]
+            if (n["type"], n["destination_id"], n["foreign_currency_code"]) != (
+                    "transfer", s2["destination_id"], s2["currency_code"]) \
+                    or abs(float(n["amount"]) - float(s["amount"])) > 0.005 \
+                    or abs(float(n["foreign_amount"] or 0) - float(s2["amount"])) > 0.005:
+                problem(g2, s2, f"conversion {ref}: #{g['id']} did not become the expected transfer")
+                gone.add(g["id"])
+                continue
+            api("DELETE", f"transactions/{g2['id']}")
+        gone |= {g["id"], g2["id"]}
+
+    for g, s in open_:
+        m = TOPUP.match(s["description"] or "")
+        if not m or s["type"] != "deposit":
+            continue
+        day = date.fromisoformat(s["date"][:10])
+        found = [(h, t) for h in get_all(f"accounts/{s['destination_id']}/transactions?"
+                                         f"start={day - timedelta(days=PAIR_DAYS)}"
+                                         f"&end={day + timedelta(days=PAIR_DAYS)}")
+                 for t in h["attributes"]["transactions"]
+                 if len(h["attributes"]["transactions"]) == 1
+                 and t["type"] == "transfer"   # this endpoint's type filter lets deposits through
+                 and t["destination_id"] == s["destination_id"]
+                 and t["currency_code"] == s["currency_code"]
+                 and abs(float(t["amount"]) - float(s["amount"])) < 0.005
+                 and "Wise: TRANSFER-" not in (t["notes"] or "")]   # already paired
+        if len(found) == 1:
+            h, t = found[0]
+            print(f"  #{g['id']} top-up {m[1]}: is transfer #{h['id']} from {t['source_name']}, drop #{g['id']}")
+            if execute:
+                notes = add_note(t, f"Wise: {m[1]}")
+                put_split(h, t, notes=notes)
+                api("DELETE", f"transactions/{g['id']}")
+                for x in groups:   # process() below must not work with the old notes
+                    if x["id"] == h["id"]:
+                        x["attributes"]["transactions"][0]["notes"] = notes
+            gone.add(g["id"])
+        elif len(found) > 1:
+            problem(g, s, "top-up matches several transfers: "
+                          + ", ".join(f"#{h['id']}" for h, _ in found))
+        elif (date.today() - day).days <= PAIR_DAYS:
+            print(f"  #{g['id']} top-up {m[1]}: no transfer from an own account yet, waiting")
+            gone.add(g["id"])
+        else:
+            problem(g, s, "top-up without a transfer from an own account: set where the money came from")
+    return [g for g in groups if g["id"] not in gone], failed
+
+
 def line(g, s):
     return (f"#{g['id']} {s['date'][:10]} {own_account(s)} -> {counterparty(s)} "
             f"{float(s['amount']):.2f} {s['currency_code']}: {s['description'][:60]}")
@@ -747,8 +861,12 @@ def main():
         load_jobs(args.jobs)
         load_account_patterns()
         print(f"{len(BANK_NAMES)} bank name(s) from the job files, {len(ACCOUNT_PATTERNS)} rule pattern(s)")
+    wise_failed = []
+    if not args.backfill:
+        groups, wise_failed = wise_pairs(groups, args.execute)
     done, failed, uncategorised = process(groups, description_overrides(), args.execute,
                                           drop_tag=True)
+    failed = wise_failed + failed
     stale = stale_imports() if not args.backfill else []
     block = shared_ibans(args.execute) if not args.backfill else []
     for e in empty_accounts(args.execute) if not args.backfill else []:
